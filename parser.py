@@ -9,17 +9,14 @@ tokens = [
     'INT_CONST_DEC', 'INT_CONST_OCT', 'INT_CONST_HEX', 'INT_CONST_BIN',
     'FLOAT_CONST', 'HEX_FLOAT_CONST',
     'CHAR_CONST',
-    'WCHAR_CONST',
+    #'WCHAR_CONST',
 
     # String literals
     'STRING_LITERAL',
-    'WSTRING_LITERAL',
-
-    # comment
-    'COMMENT',       # '#'
+    #'WSTRING_LITERAL',
 ]
 
-literals = "[],:"
+literals = "[](),:"
 
 # valid C identifiers (K&R2: A.2.3), plus '$' (supported by some compilers)
 identifier = r'[a-zA-Z_$][0-9a-zA-Z_$]*'
@@ -174,8 +171,9 @@ class Juxt(list):
     def __repr__(self):
         return "Juxt"+list.__repr__(self)
 
-Def = namedtuple("Def", ["name", "quotation"])
-Lit = namedtuple("Lit", ["type", "value"])
+Def  = namedtuple("Def", ["name", "quotation"])
+Lit  = namedtuple("Lit", ["type", "value"])
+Node = namedtuple("Node", ["type", "quotation"])
 
 def p_expression(p):
     """expression : empty
@@ -191,7 +189,8 @@ def p_part(p):
             | definition
             | literal
             | juxt
-            | quotation"""
+            | quotation
+            | node"""
     p[0] = p[1]
 
 def p_literal_char(p):
@@ -230,6 +229,10 @@ def p_quotation(p):
 def p_definition(p):
     """definition : ID ':' quotation"""
     p[0] = Def(p[1], p[3])
+
+def p_node(p):
+    """node : ID '(' expression ')'"""
+    p[0] = Node(p[1], p[3])
 
 def p_empty(p):
     'empty :'
