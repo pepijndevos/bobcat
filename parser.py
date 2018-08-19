@@ -1,7 +1,7 @@
 from ply import lex
 from ply.lex import TOKEN
 
-tokens = (
+tokens = [
     # Identifiers
     'ID',
 
@@ -15,16 +15,11 @@ tokens = (
     'STRING_LITERAL',
     'WSTRING_LITERAL',
 
-    # Delimeters
-    #'LPAREN', 'RPAREN',         # ( )
-    'LBRACKET', 'RBRACKET',     # [ ]
-    #'LBRACE', 'RBRACE',         # { }
-    'COMMA',# 'PERIOD',          # . ,
-    #'SEMI', 'COLON',            # ; :
-
     # comment
     'COMMENT',       # '#'
-)
+]
+
+literals = "[],:"
 
 # valid C identifiers (K&R2: A.2.3), plus '$' (supported by some compilers)
 identifier = r'[a-zA-Z_$][0-9a-zA-Z_$]*'
@@ -60,6 +55,7 @@ cconst_char = r"""([^'\\\n]|"""+escape_sequence+')'
 char_const = "'"+cconst_char+"'"
 wchar_const = 'L'+char_const
 unmatched_quote = "('"+cconst_char+"*\\n)|('"+cconst_char+"*$)"
+unmatched_doublequote = "(\""+cconst_char+"*\\n)|(\""+cconst_char+"*$)"
 bad_char_const = r"""('"""+cconst_char+"""[^'\n]+')|('')|('"""+bad_escape+r"""[^'\n]*')"""
 
 # string literals (K&R2: A.2.6)
@@ -82,18 +78,6 @@ t_ignore = ' \t'
 def t_NEWLINE(t):
     r'\n+'
     t.lexer.lineno += t.value.count("\n")
-
-# Delimeters
-#t_LPAREN            = r'\('
-#t_RPAREN            = r'\)'
-t_LBRACKET          = r'\['
-t_RBRACKET          = r'\]'
-#t_LBRACE            = r'\{'
-#t_RBRACE            = r'\}'
-t_COMMA             = r','
-#t_PERIOD            = r'\.'
-#t_SEMI              = r';'
-#t_COLON             = r':'
 
 t_STRING_LITERAL = string_literal
 
@@ -156,12 +140,19 @@ def t_BAD_CHAR_CONST(t):
 def t_WSTRING_LITERAL(t):
     return t
 
+@TOKEN(unmatched_doublequote)
+def t_UNMATCHED_DOUBLEQUOTE(t):
+    print("Unmatched \"")
+    t.lexer.skip(1)
+
 @TOKEN(bad_string_literal)
 def t_BAD_STRING_LITERAL(t):
     print("Invalid string literal")
     t.lexer.skip(1)
 
-t_ID = identifier
+@TOKEN(identifier)
+def t_ID(t):
+    return t
 
 def t_COMMENT(t):
     r'\#.*'
@@ -173,3 +164,91 @@ def t_error(t):
     t.lexer.skip(1)
 
 lexer = lex.lex()
+
+
+
+import ply.yacc as yacc
+from collections import namedtuple
+
+class Juxt(list):
+    def __repr__(self):
+        return "Juxt"+list.__repr__(self)
+
+Def = namedtuple("Def", ["name", "quotation"])
+Lit = namedtuple("Lit", ["type", "value"])
+
+def p_expression(p):
+    """expression : empty
+                  | expression part"""
+    if len(p) > 2:
+        p[1].append(p[2])
+        p[0] = p[1]
+    else:
+        p[0] = []
+
+def p_part(p):
+    """part : ID
+            | definition
+            | literal
+            | juxt
+            | quotation"""
+    p[0] = p[1]
+
+def p_literal_char(p):
+    """literal : CHAR_CONST"""
+    p[0] = Lit('char', p[1])
+
+def p_literal_float(p):
+    """literal : FLOAT_CONST
+               | HEX_FLOAT_CONST"""
+    p[0] = Lit('float', p[1])
+
+def p_literal_int(p):
+    """literal : INT_CONST_BIN
+               | INT_CONST_DEC
+               | INT_CONST_HEX
+               | INT_CONST_OCT"""
+    p[0] = Lit('int', p[1])
+
+def p_literal_string(p):
+    """literal : STRING_LITERAL"""
+    p[0] = Lit('char*', p[1])
+
+def p_juxt(p):
+    """juxt : ID ',' ID
+            | juxt ',' ID"""
+    if isinstance(p[1], Juxt):
+        p[1].append(p[3])
+        p[0] = p[1]
+    else:
+        p[0] = Juxt([p[1], p[3]])
+
+def p_quotation(p):
+    """quotation : '[' expression ']'"""
+    p[0] = p[2]
+
+def p_definition(p):
+    """definition : ID ':' quotation"""
+    p[0] = Def(p[1], p[3])
+
+def p_empty(p):
+    'empty :'
+    pass
+
+
+# Error rule for syntax errors
+def p_error(p):
+    print("Syntax error in input!")
+
+# Build the parser
+parser = yacc.yacc()
+
+if __name__ == "__main__":
+    while True:
+       try:
+           s = input('> ')
+       except EOFError:
+           break
+       if not s: continue
+       result = parser.parse(s)
+       print(result)
