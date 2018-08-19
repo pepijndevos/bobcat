@@ -1,5 +1,6 @@
 from pycparser import c_parser, c_generator, c_ast, parse_file
 from copy import deepcopy
+import parser
 
 class RenameVisitor(c_ast.NodeVisitor):
     def __init__(self):
@@ -45,6 +46,7 @@ def fndecl(name, inargs, outargs, code):
     for arg in ptroutargs:
         rename.visit(arg)
         arg.type = c_ast.PtrDecl([], arg.type)
+        arg.init = None
 
     fdecl = c_ast.FuncDecl(
             c_ast.ParamList(inargs+ptroutargs),
@@ -70,11 +72,10 @@ def gensym(base='var'):
     symidx[base] = idx
     return "%s_%d" % (base, idx)
 
-def concat(lookup, fns):
+def compile_words(lookup, stack, inargs, code, fns):
     gen = c_generator.CGenerator()
-    stack = {}
-    inargs = []
-    code = []
+    temp_stack = {}
+
     for fn in fns:
         rename = RenameVisitor()
         finargs, foutargs = lookup[fn]
@@ -99,13 +100,55 @@ def concat(lookup, fns):
             rename.visit(foutarg)
 
             fouttype = gen.visit(foutarg.type)
-            typestack = stack.setdefault(fouttype, [])
+            # put outputs on temporary stack
+            # so they are not consumed within a juxt
+            typestack = temp_stack.setdefault(fouttype, [])
             typestack.append(foutarg)
             foutnames.append(foutarg.name)
             code.append(foutarg)
 
         code.append(fncall(fn, finnames, foutnames))
 
-    outargs = [a for args in stack.values() for a in args] 
-    return inargs, outargs, code
+    for typ, vals in temp_stack.items():
+        stack.setdefault(typ, []).extend(vals)
 
+
+def push_literal(lookup, stack, code, lit):
+    name = gensym()
+    const = c_ast.Constant(lit.type, lit.value)
+    tdecl = c_ast.TypeDecl(name, [], c_ast.IdentifierType([lit.type]))
+    decl = c_ast.Decl(name, [], [], [], tdecl, const, None)
+    code.append(decl)
+    stack.setdefault(lit.type, []).append(decl)
+
+def push_fnptr(lookup, stack, inargs, decl_code, code, quot):
+    fndecl = compile_ast(lookup, decl_code, quot)
+    # TODO this is currently useless.
+    # You can push a pointer on the stack but not really use it
+    # Will require some varargs magic...
+    stack.setdefault("void*", []).append(fndecl)
+
+def compile_ast(lookup, decl_code, bobast, name=None):
+    if name == None:
+        name = gensym('fn')
+
+    stack = {}
+    inargs = []
+    code = []
+    for word in bobast:
+        if isinstance(word, parser.Juxt):
+            compile_words(lookup, stack, inargs, code, word)
+        elif isinstance(word, parser.Def):
+            compile_ast(lookup, decl_code, word.quotation, word.name)
+        elif isinstance(word, parser.Lit):
+            push_literal(lookup, stack, code, word)
+        elif isinstance(word, list):
+            push_fnptr(lookup, stack, inargs, decl_code, code, word)
+        else:
+            compile_words(lookup, stack, inargs, code, [word])
+
+    outargs = [a for args in stack.values() for a in args] 
+    fn = fndecl(name, inargs, outargs, code)
+    decl_code.append(fn)
+    lookup[name] = (inargs, outargs)
+    return fn.decl

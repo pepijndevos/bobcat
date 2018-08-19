@@ -185,37 +185,40 @@ def p_expression(p):
         p[0] = []
 
 def p_part(p):
-    """part : ID
-            | definition
-            | literal
+    """part : definition
+            | word
             | juxt
             | quotation
             | node"""
     p[0] = p[1]
 
-def p_literal_char(p):
-    """literal : CHAR_CONST"""
+def p_word_id(p):
+    """word : ID"""
+    p[0] = p[1]
+
+def p_word_char(p):
+    """word : CHAR_CONST"""
     p[0] = Lit('char', p[1])
 
-def p_literal_float(p):
-    """literal : FLOAT_CONST
+def p_word_float(p):
+    """word : FLOAT_CONST
                | HEX_FLOAT_CONST"""
     p[0] = Lit('float', p[1])
 
-def p_literal_int(p):
-    """literal : INT_CONST_BIN
+def p_word_int(p):
+    """word : INT_CONST_BIN
                | INT_CONST_DEC
                | INT_CONST_HEX
                | INT_CONST_OCT"""
     p[0] = Lit('int', p[1])
 
-def p_literal_string(p):
-    """literal : STRING_LITERAL"""
+def p_word_string(p):
+    """word : STRING_LITERAL"""
     p[0] = Lit('char*', p[1])
 
 def p_juxt(p):
-    """juxt : ID ',' ID
-            | juxt ',' ID"""
+    """juxt : word ',' word
+            | juxt ',' word"""
     if isinstance(p[1], Juxt):
         p[1].append(p[3])
         p[0] = p[1]
