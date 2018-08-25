@@ -151,16 +151,24 @@ def compile_node(lookup, decl_code, node):
     code = []
     stack = {}
     inargs = []
-
     pre = node.type + '_pre'
+    post = node.type + '_post'
+
     compile_ast(lookup, stack, inargs, decl_code, code, pre)
 
     for word in node.quotation:
         compile_ast(lookup, stack, inargs, decl_code, code, word)
         compile_ast(lookup, stack, inargs, decl_code, code, node.type)
+        call = code[-1]
+        end_stack = deepcopy(stack)
+        end_inargs = deepcopy(inargs)
+        end_code = []
+        compile_ast(lookup, end_stack, end_inargs, decl_code, end_code, post)
+        end_code.append(c_ast.Return(None))
+        end = c_ast.Compound(end_code)
+        condition = c_ast.If(call, end, None)
+        code[-1] = condition
 
-    code.append(c_ast.Label("end", c_ast.EmptyStatement()))
-    post = node.type + '_post'
     compile_ast(lookup, stack, inargs, decl_code, code, post)
 
     outargs = [a for args in stack.values() for a in args] 
