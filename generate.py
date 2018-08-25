@@ -38,7 +38,7 @@ def fncall(name, inargs, outargs):
     outid = [c_ast.UnaryOp('&', c_ast.ID(a)) for a in outargs]
     fn = c_ast.FuncCall(c_ast.ID(name),
         c_ast.ExprList(inid + outid))
-    return c_ast.If(fn, c_ast.Return(c_ast.Constant("int", "0")), None)
+    return fn
 
 def fndecl(name, inargs, outargs, code):
     ptroutargs = [deepcopy(arg) for arg in outargs]
@@ -52,7 +52,7 @@ def fndecl(name, inargs, outargs, code):
             c_ast.ParamList(inargs+ptroutargs),
             c_ast.TypeDecl(
                 name, [],
-                c_ast.IdentifierType(['int'])))
+                c_ast.IdentifierType(['void'])))
     decl = c_ast.Decl(name, [], [], [], fdecl, None, None)
     assign = []
     for ptr, var in zip(ptroutargs, outargs):
@@ -61,8 +61,7 @@ def fndecl(name, inargs, outargs, code):
                     c_ast.UnaryOp('*', c_ast.ID(ptr.name)),
                     c_ast.ID(var.name)))
 
-    comp = c_ast.Compound(code + assign +
-            [c_ast.Return(c_ast.Constant("int", "0"))])
+    comp = c_ast.Compound(code + assign)
     return c_ast.FuncDef(decl, None, comp)
     
 
