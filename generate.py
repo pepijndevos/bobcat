@@ -71,60 +71,51 @@ def gensym(base='var'):
     symidx[base] = idx
     return "%s_%d" % (base, idx)
 
-def compile_words(lookup, stack, inargs, code, fns):
+def compile_word(lookup, stack, temp_stack, inargs, code, fn):
     gen = c_generator.CGenerator()
+    rename = RenameVisitor()
+    finargs, foutargs = lookup[fn]
+    finnames = []
+    foutnames = []
+
+    for finarg in finargs:
+        finarg = deepcopy(finarg)
+        rename.visit(finarg)
+
+        fintype = gen.visit(finarg.type)
+        typestack = stack.setdefault(fintype, [])
+        if len(typestack) > 0:
+            a = typestack.pop()
+            finnames.append(a.name)
+        else:
+            inargs.append(finarg)
+            finnames.append(finarg.name)
+
+    for foutarg in foutargs:
+        foutarg = deepcopy(foutarg)
+        rename.visit(foutarg)
+
+        fouttype = gen.visit(foutarg.type)
+        # put outputs on temporary stack
+        # so they are not consumed within a juxt
+        typestack = temp_stack.setdefault(fouttype, [])
+        typestack.append(foutarg)
+        foutnames.append(foutarg.name)
+        code.append(foutarg)
+
+    code.append(fncall(fn, finnames, foutnames))
+
+def compile_juxt(lookup, stack, inargs, code, fns):
     temp_stack = {}
 
     for fn in fns:
         if isinstance(fn, parser.Lit):
             push_literal(lookup, stack, code, fn)
             continue
-
-        rename = RenameVisitor()
-        finargs, foutargs = lookup[fn]
-        finnames = []
-        foutnames = []
-
-        for finarg in finargs:
-            finarg = deepcopy(finarg)
-            rename.visit(finarg)
-
-            fintype = gen.visit(finarg.type)
-            typestack = stack.setdefault(fintype, [])
-            if len(typestack) > 0:
-                a = typestack.pop()
-                finnames.append(a.name)
-            else:
-                inargs.append(finarg)
-                finnames.append(finarg.name)
-
-        for foutarg in foutargs:
-            foutarg = deepcopy(foutarg)
-            rename.visit(foutarg)
-
-            fouttype = gen.visit(foutarg.type)
-            # put outputs on temporary stack
-            # so they are not consumed within a juxt
-            typestack = temp_stack.setdefault(fouttype, [])
-            typestack.append(foutarg)
-            foutnames.append(foutarg.name)
-            code.append(foutarg)
-
-        code.append(fncall(fn, finnames, foutnames))
+        compile_word(lookup, stack, temp_stack, inargs, code, fn)
 
     for typ, vals in temp_stack.items():
         stack.setdefault(typ, []).extend(vals)
-
-def compile_node(lookup, stack, inargs, decl_code, code, node):
-    node_code = [node.type + '_pre']
-    for word in node.quotation:
-        node_code.append(word)
-        node_code.append(node.type)
-
-    node_code.append(node.type + '_post')
-    name = gensym(node.type)
-    compile_ast(lookup, decl_code, node_code, name)
-    compile_words(lookup, stack, inargs, code, [name])
 
 def push_literal(lookup, stack, code, lit):
     name = gensym()
@@ -135,13 +126,51 @@ def push_literal(lookup, stack, code, lit):
     stack.setdefault(lit.type, []).append(decl)
 
 def push_fnptr(lookup, stack, inargs, decl_code, code, quot):
-    fndecl = compile_ast(lookup, decl_code, quot)
+    fndecl = compile_decl(lookup, decl_code, quot)
     # TODO this is currently useless.
     # You can push a pointer on the stack but not really use it
     # Will require some varargs magic...
     stack.setdefault("void*", []).append(fndecl)
 
-def compile_ast(lookup, decl_code, bobast, name=None):
+def compile_ast(lookup, stack, inargs, decl_code, code, word):
+    if isinstance(word, parser.Juxt):
+        compile_juxt(lookup, stack, inargs, code, word)
+    elif isinstance(word, parser.Def):
+        compile_decl(lookup, decl_code, word.quotation, word.name)
+    elif isinstance(word, parser.Lit):
+        push_literal(lookup, stack, code, word)
+    elif isinstance(word, parser.Node):
+        name = compile_node(lookup, decl_code, word)
+        compile_word(lookup, stack, stack, inargs, code, name)
+    elif isinstance(word, list):
+        push_fnptr(lookup, stack, inargs, decl_code, code, word)
+    else:
+        compile_word(lookup, stack, stack, inargs, code, word)
+
+def compile_node(lookup, decl_code, node):
+    code = []
+    stack = {}
+    inargs = []
+
+    pre = node.type + '_pre'
+    compile_ast(lookup, stack, inargs, decl_code, code, pre)
+
+    for word in node.quotation:
+        compile_ast(lookup, stack, inargs, decl_code, code, word)
+        compile_ast(lookup, stack, inargs, decl_code, code, node.type)
+
+    code.append(c_ast.Label("end", c_ast.EmptyStatement()))
+    post = node.type + '_post'
+    compile_ast(lookup, stack, inargs, decl_code, code, post)
+
+    outargs = [a for args in stack.values() for a in args] 
+    name = gensym(node.type)
+    fn = fndecl(name, inargs, outargs, code)
+    decl_code.append(fn)
+    lookup[name] = (inargs, outargs)
+    return name
+
+def compile_decl(lookup, decl_code, bobast, name=None):
     if name == None:
         name = gensym('fn')
 
@@ -149,18 +178,7 @@ def compile_ast(lookup, decl_code, bobast, name=None):
     inargs = []
     code = []
     for word in bobast:
-        if isinstance(word, parser.Juxt):
-            compile_words(lookup, stack, inargs, code, word)
-        elif isinstance(word, parser.Def):
-            compile_ast(lookup, decl_code, word.quotation, word.name)
-        elif isinstance(word, parser.Lit):
-            push_literal(lookup, stack, code, word)
-        elif isinstance(word, parser.Node):
-            compile_node(lookup, stack, inargs, decl_code, code, word)
-        elif isinstance(word, list):
-            push_fnptr(lookup, stack, inargs, decl_code, code, word)
-        else:
-            compile_words(lookup, stack, inargs, code, [word])
+        compile_ast(lookup, stack, inargs, decl_code, code, word)
 
     outargs = [a for args in stack.values() for a in args] 
     fn = fndecl(name, inargs, outargs, code)

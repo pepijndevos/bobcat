@@ -34,6 +34,7 @@ void failure(Status *st) {
 
 int seq_pre(Status* dummy) {
     *dummy = SUCCESS;
+    return 0;
 }
 
 int seq(const Status st, const Status accum, Status* next) {

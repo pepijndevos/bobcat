@@ -21,7 +21,7 @@ seq(success success running)
 
 ast = parser.parser.parse(code)
 decl_code = []
-generate.compile_ast(vis.func, decl_code, ast, 'test')
+generate.compile_decl(vis.func, decl_code, ast, 'test')
 
 gen = c_generator.CGenerator()
 for f in decl_code:
