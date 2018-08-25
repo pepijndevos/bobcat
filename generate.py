@@ -77,6 +77,10 @@ def compile_words(lookup, stack, inargs, code, fns):
     temp_stack = {}
 
     for fn in fns:
+        if isinstance(fn, parser.Lit):
+            push_literal(lookup, stack, code, fn)
+            continue
+
         rename = RenameVisitor()
         finargs, foutargs = lookup[fn]
         finnames = []
@@ -112,6 +116,16 @@ def compile_words(lookup, stack, inargs, code, fns):
     for typ, vals in temp_stack.items():
         stack.setdefault(typ, []).extend(vals)
 
+def compile_node(lookup, stack, inargs, decl_code, code, node):
+    node_code = [node.type + '_pre']
+    for word in node.quotation:
+        node_code.append(word)
+        node_code.append(node.type)
+
+    node_code.append(node.type + '_post')
+    name = gensym(node.type)
+    compile_ast(lookup, decl_code, node_code, name)
+    compile_words(lookup, stack, inargs, code, [name])
 
 def push_literal(lookup, stack, code, lit):
     name = gensym()
@@ -142,6 +156,8 @@ def compile_ast(lookup, decl_code, bobast, name=None):
             compile_ast(lookup, decl_code, word.quotation, word.name)
         elif isinstance(word, parser.Lit):
             push_literal(lookup, stack, code, word)
+        elif isinstance(word, parser.Node):
+            compile_node(lookup, stack, inargs, decl_code, code, word)
         elif isinstance(word, list):
             push_fnptr(lookup, stack, inargs, decl_code, code, word)
         else:

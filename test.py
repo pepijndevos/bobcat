@@ -15,6 +15,10 @@ swap
 sub
 """
 
+code = """
+seq(success success running)
+"""
+
 ast = parser.parser.parse(code)
 decl_code = []
 generate.compile_ast(vis.func, decl_code, ast, 'test')
