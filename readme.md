@@ -18,16 +18,20 @@ The [comma operator](https://suhr.github.io/papers/calg.html), for function conc
 
     2 4 dup add,sqrt # 8 1.4142
 
+Quotations, which push a function pointer on the stack. (Currently useless, without some magic sauce)
+
+    [ words ]
+
 Function declaration
 
-    def name { word word word }
+    name: [ word word word ]
 
-Bobcat does not have loops and if statements.
+Bobcat does not have built-in loops and if statements.
 It has behavior tree nodes with the following syntax
 
     node( word word word )
 
-Which is equivalent to
+Which is roughly equivalent to the following, barring logic for early returns.
 
     node_pre word node word node word node node_post
 
