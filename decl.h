@@ -57,3 +57,8 @@ int seq_post(const Status st, Status* result) {
     return 0;
 }
 
+void success_string(char** str, Status* status) {
+    *str = "hello world";
+    *status = SUCCESS;
+}
+

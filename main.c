@@ -4,7 +4,8 @@
 
 int main(int argc, char *argv[]) {
   Status out;
-  test(&out);
-  printf("%d\n", out);
+  char* str;
+  test(&out, &str);
+  printf("%d %s\n", out, str);
   return 0;
 }

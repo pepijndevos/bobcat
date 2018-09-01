@@ -16,7 +16,7 @@ subi
 """
 
 code = """
-seq(success success running)
+seq(success success_string failure running)
 """
 
 ast = parser.parser.parse(code)

@@ -2,7 +2,7 @@ from pycparser import c_parser, c_generator, c_ast, parse_file
 from copy import deepcopy
 import parser
 
-class RenameVisitor(c_ast.NodeVisitor):
+class GensymVisitor(c_ast.NodeVisitor):
     def __init__(self):
         self.sym = {}
 
@@ -12,6 +12,23 @@ class RenameVisitor(c_ast.NodeVisitor):
 
     def visit_TypeDecl(self, node):
         node.declname = self.sym.setdefault(node.declname, gensym(node.declname))
+
+class RenameVisitor(c_ast.NodeVisitor):
+    def __init__(self, name):
+        self.sym = {}
+        self.name = name
+        self.idx = 0
+
+    def visit_Decl(self, node):
+        if node.name not in self.sym:
+            self.sym[node.name] = "%s_%s" % (self.name, self.idx)
+            self.idx+=1
+
+        node.name = self.sym[node.name]
+        self.generic_visit(node)
+
+    def visit_TypeDecl(self, node):
+        node.declname = self.sym[node.declname]
 
 class FuncDefVisitor(c_ast.NodeVisitor):
     def __init__(self):
@@ -42,7 +59,7 @@ def fncall(name, inargs, outargs):
 
 def fndecl(name, inargs, outargs, code):
     ptroutargs = [deepcopy(arg) for arg in outargs]
-    rename = RenameVisitor()
+    rename = RenameVisitor("out")
     for arg in ptroutargs:
         rename.visit(arg)
         arg.type = c_ast.PtrDecl([], arg.type)
@@ -64,6 +81,19 @@ def fndecl(name, inargs, outargs, code):
     comp = c_ast.Compound(code + assign)
     return c_ast.FuncDef(decl, None, comp)
     
+def assign_results(outargs, code):
+    ptroutargs = [deepcopy(arg) for arg in outargs]
+    rename = RenameVisitor("out")
+    for arg in ptroutargs:
+        rename.visit(arg)
+        arg.type = c_ast.PtrDecl([], arg.type)
+        arg.init = None
+
+    for ptr, var in zip(ptroutargs, outargs):
+        code.append(
+                c_ast.Assignment('=',
+                    c_ast.UnaryOp('*', c_ast.ID(ptr.name)),
+                    c_ast.ID(var.name)))
 
 symidx = {}
 def gensym(base='var'):
@@ -73,7 +103,7 @@ def gensym(base='var'):
 
 def compile_word(lookup, stack, temp_stack, inargs, code, fn):
     gen = c_generator.CGenerator()
-    rename = RenameVisitor()
+    rename = GensymVisitor()
     finargs, foutargs = lookup[fn]
     finnames = []
     foutnames = []
@@ -164,6 +194,8 @@ def compile_node(lookup, decl_code, node):
         end_inargs = deepcopy(inargs)
         end_code = []
         compile_ast(lookup, end_stack, end_inargs, decl_code, end_code, post)
+        outargs = [a for args in end_stack.values() for a in args] 
+        assign_results(outargs, end_code)
         end_code.append(c_ast.Return(None))
         end = c_ast.Compound(end_code)
         condition = c_ast.If(call, end, None)
